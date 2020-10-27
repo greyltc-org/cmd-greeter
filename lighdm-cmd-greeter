@@ -1,0 +1,139 @@
+#!/usr/bin/env python3
+# this file is the greeter backend server
+# it gets run by the lightdm user
+
+# gobject introspection
+import gi
+
+import warnings
+import sys
+import traceback
+
+# for IPC (used to transmit login and password)
+from pydbus import SystemBus  # TODO: replace pydbus. it's abandoned
+from pydbus.generic import signal
+
+with warnings.catch_warnings():
+    warnings.simplefilter('ignore')
+    from gi.repository import LightDM
+from gi.repository import GLib
+
+# for debugging
+log_file = "/run/lightdm/log.txt"
+#log_file = "/tmp/log.txt"
+
+def lprint(*args, **kwargs):
+    original_stdout = sys.stdout # Save a reference to the original standard output
+    with open(log_file, 'a') as f:
+        sys.stdout = f  # Change the standard output to the file we created.
+        print(*args, **kwargs)
+        sys.stdout = original_stdout # Reset the standard output to its original value
+
+class CGreetDBUSService(object):
+    """
+        <node>
+            <interface name='com.greyltc.cgreet'>
+                <signal name="prompt_text">
+                    <arg type='s'/>
+                </signal>
+                <signal name="auth_complete">
+                    <arg type='b'/>
+                </signal>
+                <method name='respond'>
+                    <arg type='s' name='response' direction='in'/>
+                </method>
+                <method name='authenticate'/>
+            </interface>
+        </node>
+    """
+    address = "com.greyltc.cgreet"
+    prompt_text = signal()
+    auth_complete = signal()
+
+    def __init__(self, manager):
+        self.manager = manager
+        self.greeter = manager.g
+        self.greeter.connect('show-prompt', self.show_prompt)
+        self.greeter.connect('authentication-complete', self.authentication_complete)
+    
+    def show_prompt(self, greeter, text, prompt_type):
+        """relays prompt text from the greeter to the user"""
+        self.prompt_text(text)
+
+    def respond(self, response):
+        """relays a response from the user to the greeter"""
+        self.greeter.respond(response)
+
+    def authenticate(self):
+        """tells the greeter that the user wishes to initiate authentication"""
+        self.greeter.authenticate()
+    
+    def authentication_complete(self, greeter):
+        auth_result = greeter.get_is_authenticated()
+        self.auth_complete(auth_result)
+        if auth_result == True:
+            session_started = greeter.start_session_sync(None)  # None means we'll start the default session
+        self.manager.loop.quit()
+
+class CGreet:
+    dbus_connected = False
+    lightdm_connected = False
+    exit_code = 1
+
+    def __init__(self, *args, **kwargs):
+        # for debugging
+        #with open(log_file, 'w') as f:
+        #    f.write("Log Start\n")
+
+        # make our lightdm greeter object
+        self.g = LightDM.Greeter.new()
+
+        # make the main loop object
+        self.loop = GLib.MainLoop.new(None, False)
+
+        try:
+            # connect to the lightdm daemon
+            self.g.connect_to_daemon_sync()
+            self.lightdm_connected = True
+        except Exception:
+            print("Exception connecting to daemon:")
+            print("-"*60)
+            traceback.print_exc(file=sys.stdout)
+            print("-"*60)
+            self.exit_code = 1
+
+        try:
+            # connect to the system dbus
+            self.system_bus = SystemBus()
+            self.dbus_connected = True
+        except Exception:
+            print("Exception connecting to dbus:")
+            print("-"*60)
+            traceback.print_exc(file=sys.stdout)
+            print("-"*60)
+            self.exit_code = 1
+
+    def register_dbus_server(self, server):
+        self.server = server
+
+    def run(self):
+        if (self.dbus_connected == True) and (self.lightdm_connected == True):
+            self.system_bus.publish(self.server.address, self.server)
+            #self.g.authenticate()
+            self.exit_code = self.loop.run()
+
+        return self.exit_code
+
+
+if __name__ == "__main__":
+    # the greeter management object
+    cg = CGreet(sys.argv)
+
+    # the dbus service object
+    cgs = CGreetDBUSService(cg)
+
+    # register the dbus service object with the manager
+    cg.register_dbus_server(cgs)
+
+    exit_code = cg.run()
+    sys.exit(exit_code)
