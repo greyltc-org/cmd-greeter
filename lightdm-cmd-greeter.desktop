@@ -1,6 +1,6 @@
 [Desktop Entry]
 Name=LightDM command line Greeter
 Comment=This runs the command line greeter, it should only be run from LightDM
-Exec=python3 /var/tmp/cmd-greeter/cmd-greeter.py
+Exec=lightdm-cmd-greeter
 Type=Application
 X-Ubuntu-Gettext-Domain=lightdm
