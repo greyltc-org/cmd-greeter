@@ -11,8 +11,8 @@ or manually (tested only in Arch Linux):
 * Put lightdm-cmd-greeter.desktop into /usr/share/xgreeters/
 * Put com.greyltc.cgreet.conf into /etc/dbus-1/system.d/ (& create that folder if it does not exist)
 * Put lightdm-cmd-greeter into /usr/bin/
-## Setup
 * Reload the dbus service
+## Setup
 * Make sure lightdm is your only enabled display manager service
 * Edit /etc/lightdm/lightdm.conf so that `greeter-session=lightdm-cmd-greeter` is under the `[Seat:*]` section
 ## Usage
