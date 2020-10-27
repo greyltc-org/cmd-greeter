@@ -11,8 +11,8 @@ a command line lightdm greeter
 * Reload the dbus service
 * Put lightdm-cmd-greeter into /usr/bin/
 * Restart the lightdm service
- - this should end your desktop session and present you with your new greeter (a black screen)
+    - this should end your desktop session and present you with your new greeter (a black screen)
 * Get into a tty (via ssh or ctrl-alt-f2 or something)
 * Execute lightdm-cmd-greeter-login
- - You'll be prompted for your user name and password
- - If you enter them correctly, your default destop session should launch
+    - You'll be prompted for your user name and password
+    - If you enter them correctly, your default destop session should launch
