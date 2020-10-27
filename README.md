@@ -9,7 +9,7 @@ or manually (tested only in Arch Linux):
 * Install the lightdm, python and python-pydbus packages
 * Clone this repo
 * Put lightdm-cmd-greeter.desktop into /usr/share/xgreeters/
-* Put com.greyltc.cgreet.conf into /etc/dbus-1/system.d/ (& create that folder if it does not exist
+* Put com.greyltc.cgreet.conf into /etc/dbus-1/system.d/ (& create that folder if it does not exist)
 * Put lightdm-cmd-greeter into /usr/bin/
 ## Setup
 * Reload the dbus service
