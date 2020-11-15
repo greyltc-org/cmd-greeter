@@ -9,9 +9,8 @@ import warnings
 import sys
 import traceback
 
-# for IPC (used to transmit login and password)
-from pydbus import SystemBus  # TODO: replace pydbus. it's abandoned
-from pydbus.generic import signal
+import xml.etree.ElementTree as ET
+from gi.repository import Gio
 
 with warnings.catch_warnings():
     warnings.simplefilter('ignore')
@@ -30,50 +29,135 @@ def lprint(*args, **kwargs):
         sys.stdout = original_stdout # Reset the standard output to its original value
 
 class CGreetDBUSService(object):
-    """
-        <node>
-            <interface name='com.greyltc.cgreet'>
-                <signal name="prompt_text">
-                    <arg type='s'/>
-                </signal>
-                <signal name="auth_complete">
-                    <arg type='b'/>
-                </signal>
-                <method name='respond'>
-                    <arg type='s' name='response' direction='in'/>
-                </method>
-                <method name='authenticate'/>
-            </interface>
-        </node>
-    """
-    address = "com.greyltc.cgreet"
-    prompt_text = signal()
-    auth_complete = signal()
+    bus_name = "com.greyltc.cgreet"
+    bus_connected = False
 
     def __init__(self, manager):
+        self.bus_name_path = '/' + self.bus_name.replace('.','/')
+
+        # form the xml for the dbus server definition
+        node = ET.Element("node")
+        interface = ET.SubElement(node, "interface", name=self.bus_name)
+
+        signal = ET.SubElement(interface, "signal", name="prompt_text")
+        ET.SubElement(signal, "arg", type="s")
+        signal = ET.SubElement(interface, "signal", name="auth_complete")
+        ET.SubElement(signal, "arg", type="b")
+
+        method = ET.SubElement(interface, "method", name="respond")
+        ET.SubElement(method, "arg", type="s", name="response", direction="in")
+        method = ET.SubElement(interface, "method", name="authenticate")
+
+        xml = "<!DOCTYPE node PUBLIC '-//freedesktop//DTD D-BUS Object Introspection 1.0//EN' "
+        xml += "'http://www.freedesktop.org/standards/dbus/1.0/introspect.dtd'>"
+        xml += ET.tostring(node, xml_declaration=False).decode()
+        # for debugging:
+        #tree = ET.ElementTree(node)
+        #tree.write("filename.xml")
+
+        # parse XML definition into dbus node info object
+        self.server_info = Gio.DBusNodeInfo.new_for_xml(xml)
+
+        # make a connection to the bus
+        bus_get_setup = {}
+        bus_get_setup['bus_type'] = Gio.BusType.SYSTEM
+        bus_get_setup['cancellable'] = None
+        try:
+            system_bus_connection = Gio.bus_get_sync(**bus_get_setup)
+            self.bus_connected = True
+        except Exception:
+            print("Exception connecting to dbus:")
+            print("-"*60)
+            traceback.print_exc(file=sys.stdout)
+            print("-"*60)
+
+        # Start acquiring name on the bus
+        bus_own_name_setup = {}
+        bus_own_name_setup['connection'] = system_bus_connection
+        bus_own_name_setup['name'] = self.bus_name
+        bus_own_name_setup['flags'] = Gio.BusNameOwnerFlags.DO_NOT_QUEUE
+        bus_own_name_setup['name_acquired_closure'] = self.handle_name_acquisition
+        bus_own_name_setup['name_lost_closure'] = None
+        try:
+            self.bus_reg = Gio.bus_own_name_on_connection(**bus_own_name_setup)
+        except Exception:
+            print("Exception connecting to dbus:")
+            print("-"*60)
+            traceback.print_exc(file=sys.stdout)
+            print("-"*60)
+
         self.manager = manager
         self.greeter = manager.g
         self.greeter.connect('show-prompt', self.show_prompt)
         self.greeter.connect('authentication-complete', self.authentication_complete)
-    
+
+    def handle_name_acquisition(self, connection, name):
+        """called when the bus name acquisition is complete
+        here we register the server's capabilities with the bus"""
+
+        if name == self.bus_name:
+            self.iface_connection = connection
+            register_object_setup = {}
+            register_object_setup['object_path'] = self.bus_name_path
+            register_object_setup['interface_info'] = self.server_info.interfaces[0]
+            register_object_setup['method_call_closure'] = self.handle_method_call
+            register_object_setup['get_property_closure'] = None
+            register_object_setup['set_property_closure'] = None
+            self.iface_reg = connection.register_object(**register_object_setup)
+
+    def handle_method_call(self, connection, sender, object_path, interface_name, method_name, parameters, invocation):
+        """handles all method calls called by clients over the bus"""
+        if method_name == 'authenticate':
+            self.greeter.authenticate()
+            invocation.return_value(None)
+        elif method_name == 'respond':
+            response = parameters.unpack()[0]
+            self.greeter.respond(response)
+            invocation.return_value(None)
+        else:
+            print(f"DANGER: Unexpected method name: {method_name}")
+
+    def emit(self, name, parameters):
+        """emits a signal on the bus. parameters must be None or a list of things I can gVariant"""
+        emit_signal_setup = {}
+        emit_signal_setup['destination_bus_name'] = None
+        emit_signal_setup['object_path'] = self.bus_name_path
+        emit_signal_setup['interface_name'] = self.bus_name
+        emit_signal_setup['signal_name'] = name
+        emit_signal_setup['parameters'] = self.to_variant(parameters)
+        self.iface_connection.emit_signal(**emit_signal_setup)
+
     def show_prompt(self, greeter, text, prompt_type):
-        """relays prompt text from the greeter to the user"""
-        self.prompt_text(text)
+        """relays prompt text from the greeter to the user by emitting a signal"""
+        self.emit("prompt_text", [text])
 
-    def respond(self, response):
-        """relays a response from the user to the greeter"""
-        self.greeter.respond(response)
+    # takes a list of python objects and tries to make them into a GLib Variant
+    def to_variant(self, things):
+        if things is None:
+            return None
+        else:
+            types=''
+            for thing in things:
+                if isinstance(thing, str):
+                    types = types+'s'
+                elif isinstance(thing, int):
+                    types = types+'i'
+                elif isinstance(thing, float):
+                    types = types+'d'
+                elif isinstance(thing, bool):
+                    types = types+'b'
+                else:
+                    print(f"DANGER: I can't gVariant {thing} of type {type(thing)}")
+            return GLib.Variant(f"({types})", things)
 
-    def authenticate(self):
-        """tells the greeter that the user wishes to initiate authentication"""
-        self.greeter.authenticate()
-    
     def authentication_complete(self, greeter):
         auth_result = greeter.get_is_authenticated()
-        self.auth_complete(auth_result)
+        self.emit("auth_complete", [auth_result])
         if auth_result == True:
             session_started = greeter.start_session_sync(None)  # None means we'll start the default session
-        self.manager.loop.quit()
+            self.iface_connection.unregister_object(self.iface_reg)
+            Gio.bus_unown_name(self.bus_reg)
+            self.manager.loop.quit()
 
 class CGreet:
     dbus_connected = False
@@ -102,23 +186,11 @@ class CGreet:
             print("-"*60)
             self.exit_code = 1
 
-        try:
-            # connect to the system dbus
-            self.system_bus = SystemBus()
-            self.dbus_connected = True
-        except Exception:
-            print("Exception connecting to dbus:")
-            print("-"*60)
-            traceback.print_exc(file=sys.stdout)
-            print("-"*60)
-            self.exit_code = 1
-
     def register_dbus_server(self, server):
         self.server = server
 
     def run(self):
-        if (self.dbus_connected == True) and (self.lightdm_connected == True):
-            self.system_bus.publish(self.server.address, self.server)
+        if (self.server.bus_connected == True) and (self.lightdm_connected == True):
             #self.g.authenticate()
             self.exit_code = self.loop.run()
 

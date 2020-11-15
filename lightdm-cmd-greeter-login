@@ -9,34 +9,33 @@ from gi.repository import Gio
 
 
 class LoggerInner(object):
-    greeter_server_dbus_address = "com.greyltc.cgreet"
+    bus_name = "com.greyltc.cgreet"
 
     def __init__(self, *args, **kwargs):
-        self.greeter_server_dbus_path = '/' + self.greeter_server_dbus_address.replace('.','/')
+        self.bus_name_path = '/' + self.bus_name.replace('.','/')
 
-        # connect to the system dbus
-        system_bus = Gio.bus_get_sync(Gio.BusType.SYSTEM, None)
+        # make a connection to the bus
+        bus_get_setup = {}
+        bus_get_setup['bus_type'] = Gio.BusType.SYSTEM
+        bus_get_setup['cancellable'] = None
+        system_bus_connection = Gio.bus_get_sync(**bus_get_setup)
 
-        # server proxy
+        # set up a proxy for our server
         srv_prx_setup = {}
-        srv_prx_setup['connection'] = system_bus
+        srv_prx_setup['connection'] = system_bus_connection
         srv_prx_setup['flags'] = Gio.DBusProxyFlags.DO_NOT_AUTO_START
         srv_prx_setup['info'] = None
-        srv_prx_setup['name'] = self.greeter_server_dbus_address
-        srv_prx_setup['object_path'] = self.greeter_server_dbus_path
-        srv_prx_setup['interface_name'] = self.greeter_server_dbus_address
+        srv_prx_setup['name'] = self.bus_name
+        srv_prx_setup['object_path'] = self.bus_name_path
+        srv_prx_setup['interface_name'] = self.bus_name
         srv_prx_setup['cancellable'] = None
         self.srv_prx = Gio.DBusProxy.new_sync(**srv_prx_setup)
 
         # create the main loop object
         self.loop = GLib.MainLoop.new(None, False)
 
-        # setup signal handler
+        # setup a signal handler to handle signals from the server
         self.srv_prx.connect('g-signal', self.handle_signal, None)
-        #self.system_bus.subscribe(object = self.greeter_server_dbus_path, signal_fired = self.prompt_action)
-
-        # connect to the server
-        #self.server = self.system_bus.get(self.greeter_server_dbus_address)
 
     # calls a function over dbus
     def db_call(self, proxy, method_name, parameters=None, flags=Gio.DBusCallFlags.NO_AUTO_START, timeout_msec=500, cancellable=None):
@@ -67,6 +66,7 @@ class LoggerInner(object):
                     print(f"DANGER: I can't gVariant {thing} of type {type(thing)}")
             return GLib.Variant(f"({types})", things)
 
+    # do something with a signal the server emits
     def handle_signal(self, proxy, sender_name, signal_name, parameters, user_data):
         if signal_name == 'prompt_text':
             prompt = parameters[0]
@@ -86,7 +86,8 @@ class LoggerInner(object):
             self.loop.quit()
     
     def run(self):
-        # start the authentication routine
+        # call the authenticate method on the server over the bus
+        # to start the login process
         self.db_call(self.srv_prx, 'authenticate')
 
         # run the main loop
