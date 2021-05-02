@@ -1,5 +1,5 @@
 # cmd-greeter
-a command line lightdm greeter
+super minimal, non-graphical, terminal based desktop session launcher via lightdm
 
 ## Install
 Install the lightdm-cmd-greeter package [from the AUR](https://aur.archlinux.org/packages/lightdm-cmd-greeter/)
@@ -21,4 +21,4 @@ or manually (tested only in Arch Linux):
 * Somehow open a terminal on the computer (via ssh or ctrl-alt-f2 or something)
 * Execute lightdm-cmd-greeter-login
     - You'll be prompted for a user name and password
-    - If you enter them correctly, that user's default destop session should launch
+    - If you enter them correctly, that user's default desktop session should launch
