@@ -9,7 +9,7 @@ from gi.repository import Gio
 
 
 class LoggerInner(object):
-    bus_name = "com.greyltc.cgreet"
+    bus_name = "org.greyltc.cgreet"
 
     def __init__(self, *args, **kwargs):
         self.bus_name_path = '/' + self.bus_name.replace('.','/')

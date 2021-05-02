@@ -29,7 +29,7 @@ def lprint(*args, **kwargs):
         sys.stdout = original_stdout # Reset the standard output to its original value
 
 class CGreetDBUSService(object):
-    bus_name = "com.greyltc.cgreet"
+    bus_name = "org.greyltc.cgreet"
     bus_connected = False
 
     def __init__(self, manager):
